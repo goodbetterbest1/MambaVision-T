@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/dental/alveolar-annotation-v2.schema.json",
+  "title": "Alveolar bone loss annotation export",
+  "type": "object",
+  "required": ["schema_version", "exported_at", "cases"],
+  "properties": {
+    "schema_version": { "const": "dent-alveolar-annotation-v2" },
+    "exported_at": { "type": "string", "format": "date-time" },
+    "cases": { "type": "array", "items": { "$ref": "#/$defs/case" } }
+  },
+  "$defs": {
+    "point": {
+      "type": "array", "prefixItems": [
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 }
+      ], "minItems": 2, "maxItems": 2
+    },
+    "line": { "type": "array", "items": { "$ref": "#/$defs/point" }, "minItems": 2 },
+    "lineSegments": { "type": "array", "items": { "$ref": "#/$defs/line" } },
+    "severityPoint": {
+      "type": "object", "required": ["id", "x", "y", "jaw", "severity", "confidence", "note"],
+      "properties": {
+        "id": { "type": "string" }, "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "jaw": { "enum": ["upper", "lower", "unknown"] },
+        "severity": { "enum": ["none", "mild", "moderate", "severe", "uncertain", "ungradable"] },
+        "confidence": { "enum": ["high", "medium", "low", "unknown"] }, "note": { "type": "string" }
+      }, "additionalProperties": false
+    },
+    "explanationSample": {
+      "type": "object", "required": ["enabled", "finding", "evidence", "desired_explanation", "uncertainty", "review_status"],
+      "properties": {
+        "enabled": { "type": "boolean" }, "finding": { "type": "string" }, "evidence": { "type": "string" },
+        "desired_explanation": { "type": "string" }, "uncertainty": { "type": "string" }, "review_status": { "type": "string" }
+      }, "additionalProperties": false
+    },
+    "case": {
+      "type": "object", "required": ["schema_version", "image_id", "filename", "width", "height", "modality", "image_quality", "case_grade", "review_status", "annotator_id", "annotation_version", "upper_crest_segments", "lower_crest_segments", "severity_points", "notes", "explanation_sample", "created_at", "updated_at"],
+      "properties": {
+        "schema_version": { "const": "dent-alveolar-annotation-v2" }, "image_id": { "type": "string", "minLength": 1 },
+        "filename": { "type": "string", "minLength": 1 }, "width": { "type": "integer", "minimum": 1 }, "height": { "type": "integer", "minimum": 1 },
+        "modality": { "enum": ["panoramic", "periapical", "bitewing", "other", "unknown"] },
+        "image_quality": { "enum": ["good", "limited", "ungradable", "unknown"] },
+        "case_grade": { "enum": ["none", "mild", "moderate", "severe", "uncertain", "ungradable", "unreviewed"] },
+        "review_status": { "enum": ["in_progress", "complete", "needs_review"] }, "annotator_id": { "type": "string" },
+        "annotation_version": { "type": "integer", "minimum": 0 },
+        "upper_crest_segments": { "$ref": "#/$defs/lineSegments" }, "lower_crest_segments": { "$ref": "#/$defs/lineSegments" },
+        "severity_points": { "type": "array", "items": { "$ref": "#/$defs/severityPoint" } },
+        "notes": { "type": "string" }, "explanation_sample": { "$ref": "#/$defs/explanationSample" },
+        "created_at": { "type": "string", "format": "date-time" }, "updated_at": { "type": "string", "format": "date-time" }
+      }, "additionalProperties": false
+    }
+  }, "additionalProperties": false
+}

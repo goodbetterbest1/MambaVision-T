@@ -1,0 +1,44 @@
+# Local datasets and patient-related files (never commit source images)
+data/images/**
+data/raw/**
+data/processed/**
+data/imports/**
+!data/images/.gitkeep
+!data/imports/.gitkeep
+# Local annotation databases and exports
+annotations/**
+exports/**
+!annotations/.gitkeep
+!exports/.gitkeep
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+# Training artifacts
+runs/
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+# Python cache
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Internal project audit notes are not part of the distributable tool
+docs/*202610*
+docs/architecture.md
+docs/research-datasets.md
+docs/resource-estimate.md
+research/
+# Credentials, local configuration and private archives
+.env
+.env.*
+*.pem
+*.key
+*.zip
+*.tar
+*.tar.gz
+.venv/

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>牙槽骨吸收 · 标注工作台</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">牙</span><div><strong>牙槽骨吸收</strong><small>全景片标注工作台</small></div></div>
+    <div class="top-actions">
+      <label class="annotator-label">标注者 ID <input id="annotatorId" maxlength="120" placeholder="如 annotator_A" autocomplete="off"></label>
+      <span id="saveStatus" class="save-status"><i></i>尚未保存</span>
+      <button id="saveBtn" class="button primary">保存标注 <kbd>⌘/Ctrl S</kbd></button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="side-head"><div><h1>病例队列</h1><p id="queueSummary">正在读取影像…</p></div><button id="refreshBtn" class="icon-button" title="重新扫描影像目录">↻</button></div>
+      <div class="search-wrap"><span>⌕</span><input id="searchInput" placeholder="搜索文件名" autocomplete="off"><kbd>/</kbd></div>
+      <div class="filter-row"><button class="filter active" data-filter="all">全部 <b id="countAll">0</b></button><button class="filter" data-filter="todo">待标注 <b id="countTodo">0</b></button><button class="filter" data-filter="complete">已完成 <b id="countComplete">0</b></button></div>
+      <div id="imageList" class="image-list"></div>
+      <div class="sidebar-footer"><span class="privacy-dot"></span>图片仅由本机服务读取，不会上传</div>
+    </aside>
+
+    <section class="workspace">
+      <div class="casebar">
+        <div class="case-title"><span class="eyebrow">当前影像</span><h2 id="imageName">请先将影像放入 data/images</h2><div id="imageMeta" class="image-meta">支持 JPG、PNG、WEBP、TIFF、BMP</div></div>
+        <div class="case-nav"><button id="prevBtn" class="icon-button" title="上一张 (←)">←</button><span id="positionLabel">0 / 0</span><button id="nextBtn" class="icon-button" title="下一张 (→)">→</button></div>
+      </div>
+
+      <div class="toolrow">
+        <div class="toolgroup">
+          <button class="tool active" data-tool="view" title="浏览影像"><span>⌖</span>浏览</button>
+          <button class="tool" data-tool="upper" title="按住鼠标左键绘制上颌牙槽嵴线"><span class="line-icon upper-line"></span>上颌骨嵴线</button>
+          <button class="tool" data-tool="lower" title="按住鼠标左键绘制下颌牙槽嵴线"><span class="line-icon lower-line"></span>下颌骨嵴线</button>
+          <button class="tool" data-tool="point" title="点击影像添加严重度位置点"><span class="point-icon"></span>严重度点</button>
+        </div>
+        <div class="toolgroup toolgroup-right">
+          <label class="toggle"><input id="showPublic" type="checkbox"><span></span>公开牙区标注</label>
+          <button id="zoomOut" class="icon-button" title="缩小">−</button><button id="zoomIn" class="icon-button" title="放大">＋</button><button id="fitBtn" class="icon-button" title="适合窗口">适合</button>
+        </div>
+      </div>
+
+      <div id="canvasViewport" class="canvas-viewport">
+        <div id="imageStage" class="image-stage">
+          <img id="panorama" alt="全景口腔影像" draggable="false">
+          <canvas id="overlay" aria-label="影像标注层"></canvas>
+        </div>
+        <div id="emptyState" class="empty-state"><div class="empty-symbol">＋</div><h3>将原始影像放入本地目录即可开始</h3><p>把图片复制到项目的 <code>data/images/</code> 文件夹，然后点左侧刷新。支持子目录分类。</p><div class="empty-foot">推荐先做匿名化；不要将可识别患者身份的信息放入文件名或备注。</div></div>
+      </div>
+
+      <div class="canvas-footer"><span id="toolHint">浏览模式：可检查全景片与现有标注。</span><span id="zoomLabel">100%</span></div>
+    </section>
+
+    <aside class="inspector">
+      <div class="inspector-head"><div><span class="eyebrow">结构化记录</span><h2>标注信息</h2></div><span class="version-chip">v2</span></div>
+      <div class="inspector-scroll">
+        <section class="form-section"><h3><span class="section-number">01</span>影像与总体判断</h3>
+          <label class="field-label">影像可评估性<select id="imageQuality"><option value="unknown">未评估</option><option value="good">良好</option><option value="limited">有限（注明原因）</option><option value="ungradable">不可评估</option></select></label>
+          <label class="field-label">整体骨吸收严重度<select id="caseGrade"><option value="unreviewed">未判定</option><option value="none">未见明显吸收</option><option value="mild">轻度</option><option value="moderate">中度</option><option value="severe">重度</option><option value="uncertain">不确定</option><option value="ungradable">不可评估</option></select></label>
+          <label class="field-label">病例状态<select id="reviewStatus"><option value="in_progress">标注中</option><option value="complete">已完成</option><option value="needs_review">需要复核</option></select></label>
+        </section>
+
+        <section class="form-section"><div class="section-title-row"><h3><span class="section-number">02</span>局部严重度位置点</h3><span id="pointCount" class="count-chip">0</span></div>
+          <div class="point-instructions">选择“严重度点”工具后，在影像中点击需要记录的位置。无需牙位编号；标记尽量对应骨嵴异常最明显处。</div>
+          <div class="point-config"><label class="field-label">新点位颌别<select id="pointJaw"><option value="upper">上颌</option><option value="lower">下颌</option><option value="unknown">不确定</option></select></label><label class="field-label">新点位等级<select id="pointSeverity"><option value="mild">轻度</option><option value="moderate" selected>中度</option><option value="severe">重度</option><option value="none">未见明显吸收</option><option value="uncertain">不确定</option><option value="ungradable">不可评估</option></select></label><label class="field-label point-confidence-field">新点位置信度<select id="pointConfidence"><option value="high">高</option><option value="medium" selected>中</option><option value="low">低</option><option value="unknown">未知</option></select></label></div>
+          <div id="pointList" class="point-list"><div class="muted-empty">尚未添加位置点</div></div>
+        </section>
+
+        <section class="form-section"><h3><span class="section-number">03</span>影像备注</h3><textarea id="notes" rows="3" maxlength="4000" placeholder="记录遮挡、缺牙、修复体、重叠或其他需复核情况"></textarea></section>
+
+        <section class="form-section explanation-section"><div class="explanation-head"><h3><span class="section-number">04</span>解释样本（可选）</h3><label class="toggle mini"><input id="explanationEnabled" type="checkbox"><span></span></label></div>
+          <p class="subtle">记录“影像表现—证据—解释”示例，供后续评估解释生成。不要填写未被影像支持的临床结论。</p>
+          <div id="explanationFields" class="explanation-fields hidden">
+            <label class="field-label">观察到的影像表现<textarea id="finding" rows="2" placeholder="只写可观察表现"></textarea></label>
+            <label class="field-label">支持该判断的证据<textarea id="evidence" rows="2" placeholder="引用位置点、骨嵴线、影像质量等"></textarea></label>
+            <label class="field-label">期望的简洁解释<textarea id="desiredExplanation" rows="3" placeholder="面向临床人员的可审计解释"></textarea></label>
+            <label class="field-label">不确定性 / 限制<textarea id="uncertainty" rows="2" placeholder="如重叠、投照质量、局部不可评估"></textarea></label>
+          </div>
+        </section>
+
+        <section class="evidence-card"><div class="evidence-header"><div><span class="eyebrow">可审计摘要</span><strong>结构化证据预览</strong></div><button id="copyEvidence" class="text-button">复制 JSON</button></div><pre id="evidencePreview">尚无可用标注</pre><p>摘要只复述标注，不自动推导临床分期或 RBL 百分比。</p></section>
+      </div>
+      <div class="inspector-footer">
+        <div class="utility-actions"><button id="undoBtn" class="text-button">撤销最近点/线</button><button id="clearBtn" class="text-button danger-text">清除当前线</button></div>
+        <div class="export-row"><button id="importBtn" class="button secondary">导入 JSON</button><div class="export-menu"><button id="exportBtn" class="button secondary">导出 ▾</button><div id="exportMenu" class="menu hidden"><a href="/api/export?format=json">完整 JSON</a><a href="/api/export?format=jsonl">JSONL</a><a href="/api/export?format=csv">汇总 CSV</a><a href="/api/export?format=evidence">结构化证据 JSONL</a></div></div></div>
+        <label class="field-label">导入同图记录时<select id="importStrategy"><option value="keep_local">保留本机已有标注（默认）</option><option value="replace">替换并保留旧版本历史</option></select></label>
+        <input id="importFile" type="file" accept=".json,application/json" hidden>
+      </div>
+    </aside>
+  </main>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
