@@ -22,11 +22,20 @@
 
   async function request(url, options={}) { const response = await fetch(url, options); const data = response.headers.get('content-type')?.includes('application/json') ? await response.json() : null; if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`); return data; }
 
+  function showStorage(storage) {
+    if(!storage)return;
+    const info=$('#storageInfo');
+    info.textContent=`自动保存至本机 · SQLite：${storage.database_path} · JSON：${storage.json_directory}`;
+    info.classList.toggle('warning',!!storage.snapshot_warning);
+    info.title=storage.snapshot_warning||'数据库为主记录；每次保存同时更新对应影像的本机 JSON 文件。';
+    if(storage.snapshot_warning)toast('数据库已保存，但 JSON 镜像写入失败。请检查磁盘空间/目录权限。',true);
+  }
+
   async function loadImages() {
     if (!(await flushChanges())) return;
     setStatus('', '扫描影像…');
     try {
-      const data = await request('/api/images'); state.images = data.images;
+      const data = await request('/api/images'); state.images = data.images;showStorage(data.storage);
       if(data.image_errors?.length)toast(`有 ${data.image_errors.length} 张图片无法读取尺寸，已跳过。请使用 PNG/JPEG 或安装 Pillow 后刷新。`,true);
       if (!state.images.length) { state.index = -1; state.current = null; renderList(); renderCurrent(); setStatus('', '尚未保存'); return; }
       const oldId = state.current?.image_id;
@@ -162,6 +171,7 @@
           state.images=state.images.map(item=>item.image_id===imageId?{...item,saved:true,review_status:response.case.review_status,case_grade:response.case.case_grade}:item);
           setStatus(changed?'saving':'saved',changed?'有新修改待保存':'已保存');updateEvidence();renderList();
         }
+        showStorage(response.storage);
         success=true;
       }catch(error){setStatus('error','保存失败');toast(`保存失败：${error.message}；修改仍保留在页面中。`,true);}
       finally{

@@ -4,7 +4,9 @@
 
 下载仓库 ZIP → 解压 → 安装 Python 3.9+。无需 GPU、Node 或 GitHub 登录。
 
-将负责人分配的、已获授权的匿名全景图放进 `data/images/`。必须保留统一相对路径、文件名和源图字节；目录不同会导致 ID 不同。不要裁剪、旋转或重新压缩原图。建议 JPG/PNG；其他格式在部分浏览器中可能无法显示。
+原始图片入口见 README 的“原始标注图片在哪里下载”：原作者仓库 https://github.com/PuckBlink/PDCNN ，Google Drive https://drive.google.com/drive/folders/18qUxeRPHPcCQT9o8AgV5400f05Fu3ISW 。只需下载 `Images.zip`（约 2.72 GB）；先确认授权，不再分发原图。
+
+将获授权 ZIP 用 `python3 tools/prepare_images.py --archive /path/to/Images.zip --out data/images` 统一解压（Windows 用 `py -3`）。也可将负责人分配的、已获授权的匿名全景图放进 `data/images/`。必须保留统一相对路径、文件名和源图字节；目录不同会导致 ID 不同。不要裁剪、旋转或重新压缩原图。建议 JPG/PNG；其他格式在部分浏览器中可能无法显示。
 
 ## 启动
 
@@ -21,6 +23,10 @@
 4. 填写影像质量、病例整体等级和备注。等级由项目统一 SOP 定义，不是工具自动给出的诊断。
 5. 可选填写解释样本：可见发现、对应证据、简洁解释和局限。
 6. 检查保存状态，再设“已完成”或“需要复核”。仍不确定的病例应明确记录不确定，不能默认健康。
+
+## 本机自动保存
+
+完成一笔/修改字段后约 750 ms 自动保存，不需要每次导出。默认写入 `annotations/annotator.sqlite3` 及 `annotations/annotator_json/<image_id>.json`。带 `--db annotations/annotator_A.sqlite3` 启动则写入 A 对应的数据库和 `annotator_A_json/` 文件夹。主库保存完整修订历史，JSON 保存最新标注；网页右下角显示真实路径。顶部保存失败或右下角 JSON 警告时请处理，不要直接关闭。
 
 ## 交付
 

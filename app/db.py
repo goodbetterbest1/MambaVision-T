@@ -1,7 +1,11 @@
 """SQLite persistence for one local annotator."""
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import re
+import tempfile
 import sqlite3
 import threading
 from pathlib import Path
@@ -12,7 +16,9 @@ from .schema import utc_now, validate_case_payload
 
 class AnnotationDB:
     def __init__(self, path: str | Path):
-        self.path = Path(path)
+        self.path = Path(path).expanduser().resolve()
+        self.json_dir = self.path.parent / (self.path.stem + '_json')
+        self.snapshot_warning = None
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
@@ -45,6 +51,32 @@ class AnnotationDB:
             """
         )
         self.conn.commit()
+
+    def storage_info(self) -> dict[str, Any]:
+        return {
+            "database_path": str(self.path),
+            "json_directory": str(self.json_dir),
+            "latest_json_directory": str(self.json_dir),
+            "snapshot_warning": self.snapshot_warning,
+        }
+
+    def _write_snapshot(self, case: dict[str, Any]) -> None:
+        self.json_dir.mkdir(parents=True, exist_ok=True)
+        identity = case["image_id"]
+        filename = identity if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", identity) else hashlib.sha256(identity.encode()).hexdigest()
+        target = self.json_dir / (filename + '.json')
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.json_dir, prefix='.save-', delete=False) as handle:
+                temporary = Path(handle.name)
+                json.dump(case, handle, ensure_ascii=False, indent=2, allow_nan=False)
+                handle.write('\n')
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, target)
+        finally:
+            if temporary and temporary.exists():
+                temporary.unlink()
 
     def close(self) -> None:
         self.conn.close()
@@ -89,6 +121,12 @@ class AnnotationDB:
                     "INSERT INTO annotation_revisions(image_id, version, payload_json, saved_at) VALUES (?, ?, ?, ?)",
                     (case["image_id"], case["annotation_version"], serialized, now),
                 )
+            # SQLite is authoritative. JSON is a readable current-version mirror, not the revision archive.
+            try:
+                self._write_snapshot(case)
+                self.snapshot_warning = None
+            except OSError:
+                self.snapshot_warning = 'SQLite saved successfully, but the local JSON mirror could not be written. Check disk space and directory permissions.'
         return case
 
     def import_cases(self, cases: list[dict[str, Any]], strategy: str = "replace") -> dict[str, int]:

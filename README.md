@@ -1,6 +1,6 @@
 # MambaVision-T · 牙槽骨吸收影像标注工作台
 
-本项目是**单机运行、浏览器访问、无需云端账户**的全景片人工标注工具。标注数据保存在运行机器的 SQLite 数据库中，可导出为 JSON、JSONL、CSV 和用于后续解释模型的数据证据 JSONL。项目不包含影像、患者数据或训练权重。
+本项目是**单机运行、浏览器访问、无需云端账户**的全景片人工标注工具。每次编辑自动保存到运行机器的 SQLite 数据库，并同步当前病例的独立 JSON 文件；可额外导出 JSON、JSONL、CSV 和用于后续解释模型的数据证据 JSONL。项目不包含影像、患者数据或训练权重。
 
 > 此仓库当前发布的是**标注工具**，不是 NVIDIA MambaVision 官方实现，也不包含 Mamba/VLM 训练程序或预训练权重。
 
@@ -11,7 +11,7 @@
 - 从指定本地目录递归读取 JPG / JPEG / PNG / WEBP / GIF / BMP / TIFF 影像；支持刷新队列。
 - 在原始像素坐标对应的画布上绘制上颌、下颌牙槽嵴折线，并添加局部严重程度位置点。
 - 记录影像质量、整体等级、复核状态、标注者 ID、备注和可选的解释样本。
-- SQLite 自动保存、修订历史；每个标注者使用自己的数据库/导出包。
+- SQLite 自动保存及修订历史，并自动写入逐病例 JSON 最新版；每个标注者使用自己的数据库/导出包。
 - 结构化证据预览；可选只读叠加兼容的 COCO polygon。
 - 完整 JSON 导入；JSON / JSONL / 汇总 CSV / evidence-JSONL 导出。CSV 是质控汇总，不包含完整几何，不能代替完整 JSON 备份。
 - 多标注者导出汇总：保留每位标注者的原始标注，生成需要人工仲裁的病例清单，不自动平均骨嵴线。
@@ -34,7 +34,7 @@
    cd MambaVision-T
    ```
 
-   然后将已获授权、已匿名化的原始图片复制到 `data/images/`，子文件夹可按来源或批次组织。
+   然后按下方 [原始标注图片在哪里下载](#原始标注图片在哪里下载) 获取获授权的图片并运行本地安全解压命令；也可复制负责人已分发的图片到 `data/images/`，子文件夹结构必须在所有标注者间一致。
 2. 在项目根目录运行：
 
    ```bash
@@ -44,9 +44,9 @@
    Windows 用户可在 PowerShell 中运行 `py -3 run_local.py`，或双击 `start_windows.bat`；macOS 可双击 `start_macos.command`。Windows 的 `py -3` 应指向 Python 3.9 或更新版本。
 
 3. 浏览器访问 `http://127.0.0.1:8000/`。
-4. 在页面填写标注者 ID，逐例标注。线条或表单修改自动保存；顶部状态显示保存结果。
-5. 右下角导出 JSON（完整记录）或 JSONL/CSV。数据库默认位于 `annotations/annotator.sqlite3`。
-6. 按 `Ctrl/⌘ + C` 停止服务。
+4. 在页面填写标注者 ID，逐例标注。标注数据约 750 ms 后自动写入本机 SQLite＋逐病例 JSON 镜像，无需每例手动点导出；页面显示确切保存路径及警告。
+5. 可选在右下角导出完整 JSON、JSONL 或汇总 CSV。默认数据库位于 `annotations/annotator.sqlite3`，最新逐病例 JSON 位于 `annotations/annotator_json/`。
+6. 按 `Ctrl/⌘ + C` 停止服务。停服前页面应显示“已保存”；本机 SQLite 和逐病例 JSON 已自动写入，手动导出是备份/交付副本。
 
 指定数据、数据库、端口：
 
@@ -64,6 +64,100 @@ python3 run_local.py --data data/images --coco /path/to/instances.json
 ```
 
 首次打开、替换或移动图片目录后，点病例队列右上的刷新按钮。无法读取尺寸的图片会被跳过并提示（TIFF 等可安装 Pillow：`python3 -m pip install Pillow`）。若浏览器本身无法解码 TIFF，由负责人统一无损转换为 PNG 后分发，保持像素方向和尺寸不变，不删除原图；所有人使用同一转换版本。
+
+## 原始标注图片在哪里下载
+
+本项目当前使用 **PDCNN / perio-dataset 全景片**作为补充人工标注的来源。本仓库不包含原图，也不会自动把图片或你的标注上传到任何网站。
+
+- 原作者说明：[PuckBlink/PDCNN](https://github.com/PuckBlink/PDCNN#dataset)。
+- 原作者提供的图片入口：[Google Drive · perio-dataset](https://drive.google.com/drive/folders/18qUxeRPHPcCQT9o8AgV5400f05Fu3ISW?usp=sharing)。
+- **只做人工画线/打点时，下载 `Images.zip` 即可**。原作者 README 标注大小约 **2.72 GB**，图像分辨率 2976 × 1536；实际包内容以下载到的版本为准。文件名大小写可能在下载后显示为 `images.zip`，命令中应使用实际路径。
+- `via_export_coco_BL.json` 是可选的原始骨吸收牙区 polygon/等级标签，用于只读叠加；没有它也可以人工打标。不需要下载 `via_export_coco_FI.json`、`S8_bestmodel.h5` 或其他训练权重。
+
+**许可提醒：公开下载入口不等于允许再分发或商业使用。** 请先由负责人确认数据使用授权；如遇登录/无权限/配额限制，按原作者或 Google Drive 的正规流程处理，不绕过权限、不使用来源不明镜像。不要把 `Images.zip`、原图或原始标签提交到 GitHub。
+
+### 下载和解压指令
+
+这是原作者的 Google Drive 文件夹链接，不是 ZIP 直链；不要用 `curl -o Images.zip <文件夹URL>`，否则可能下载到 HTML 页面而不是图片包。用浏览器打开后选中 **Images.zip → 下载**。
+
+macOS 在终端中打开下载页：
+
+```bash
+open 'https://drive.google.com/drive/folders/18qUxeRPHPcCQT9o8AgV5400f05Fu3ISW?usp=sharing'
+```
+
+Windows 在 PowerShell 中打开下载页：
+
+```powershell
+Start-Process 'https://drive.google.com/drive/folders/18qUxeRPHPcCQT9o8AgV5400f05Fu3ISW?usp=sharing'
+```
+
+下载完成后，在项目根目录执行（替换成实际 ZIP 文件名）：
+
+```bash
+# macOS / Linux：按下载后的实际文件名调整路径（例如 images.zip）
+python3 tools/prepare_images.py --archive "$HOME/Downloads/Images.zip" --out data/images
+python3 run_local.py --db annotations/annotator_A.sqlite3
+```
+
+```powershell
+# Windows PowerShell
+py -3 tools/prepare_images.py --archive "$HOME\Downloads\Images.zip" --out data/images
+py -3 run_local.py --db annotations/annotator_A.sqlite3
+```
+
+`prepare_images.py` 只在本机解压，不联网、不训练；过滤非图片文件，移除共同的外层目录，保留图片文件名、内层相对目录及原始字节，并拒绝路径穿越、重复文件名和覆盖已有图片。请给**所有标注者使用同一份原始 ZIP 和相同解压命令**，确保相对路径和 image ID 一致。若目录已有图片，不要重复解压；直接启动服务即可。
+
+目录示意（实际图片名以原始包为准）：
+
+```text
+MambaVision-T/
+├── data/images/
+│   ├── 原始文件名_001.png
+│   └── 原始文件名_002.png
+└── annotations/                 # 运行和保存时自动创建，不提交 GitHub
+```
+
+启动后打开 **http://127.0.0.1:8000/**。如解压前已启动工具，点病例队列旁的刷新按钮。
+
+### 可选：显示原有公开牙区标签
+
+将 `via_export_coco_BL.json` 下载到 `data/imports/`，再启动：
+
+```bash
+python3 run_local.py --data data/images --db annotations/annotator_A.sqlite3 --coco data/imports/via_export_coco_BL.json
+```
+
+Windows 将 `python3` 改为 `py -3`。网页勾选“公开牙区标注”即可查看名称匹配的只读 polygon；它不是人工骨嵴线，也不会自动成为你的新标注。未匹配文件保持不显示，不能擅自改名配对。
+
+## 标注自动写到本机哪里
+
+**不需要每画一笔都手动导出。** 松开鼠标完成线段、放置严重度点或修改表单后，页面约 750 ms 防抖自动保存；服务运行在谁的电脑，文件就写到谁的电脑，不是只存浏览器缓存。顶部显示“已保存”表示 SQLite 主记录已写入；右下角和启动终端会显示实际保存路径。
+
+默认启动 `python3 run_local.py` 时：
+
+```text
+annotations/
+├── annotator.sqlite3           # 主数据库：所有病例、当前版本和完整修订历史
+└── annotator_json/
+    ├── <image_id>.json          # 每张已保存影像的完整最新标注，可直接查看
+    └── ...
+```
+
+使用上面的 `--db annotations/annotator_A.sqlite3` 命令时，自动写入：
+
+```text
+annotations/annotator_A.sqlite3
+annotations/annotator_A_json/<image_id>.json
+```
+
+JSON 镜像使用临时文件＋原子替换更新，包含骨嵴线段、局部点位/等级/置信度、质量、标注者、备注和解释样本；不是截图，也不包含原始影像。重复保存同一病例更新其 JSON 最新版，历史保留在 SQLite。更改网页中的标注者 ID **不会**改变数据库路径；每个人请使用自己的 `--db`，不要共用同一 SQLite 文件。
+
+- 确认“已保存”后再关闭页面；浏览器下载的 JSON 是额外汇总副本，**不是自动保存的前提**。
+- 如果 SQLite 已保存但 JSON 镜像因磁盘/权限失败，页面会明确警告，不能把镜像视为已同步；修复空间/权限后重新保存该病例。
+- 旧版数据库仍可读取；逐病例 JSON 在该病例下一次保存时生成，不承诺启动时自动补齐旧记录。
+- 每批完成后仍建议导出“完整 JSON”通过受控渠道交给负责人，或停止服务后备份整个 `annotations/` 目录。所有这些文件均被 Git 忽略。
+- 导入默认保留本机同图记录；显式选择替换时更新当前标注并保留数据库历史。
 
 ## 标注建议与标签边界
 
@@ -132,11 +226,11 @@ python3 -m json.tool docs/annotation-schema.json >/dev/null
 ## 给标注者的最短流程
 
 1. 下载本仓库并安装 Python 3.9+，不需要 GPU、Node、GitHub token 或模型。
-2. 向项目负责人获取**获授权的原始图片和统一目录说明**，解压后放入 `data/images/`；不要自行重命名、重新编码或调整方向。
+2. 按上面的“原始标注图片在哪里下载”获取获授权的 `Images.zip`，用 `tools/prepare_images.py` 统一解压到 `data/images/`；也可使用负责人分配的获授权图片。不要自行重命名、重新编码或调整方向。
 3. 启动本地服务，访问网页，填写自己的唯一标注者 ID。
 4. 按 [标注规范](docs/annotation-guidelines.md) 绘线、添加局部等级点、选择质量和病例状态。不可见处不补画猜测线。
 5. 关闭页面前确认“已保存”；每批完成后导出 **完整 JSON**，将文件重命名为 `annotator_A_batch01.json`，通过负责人指定的私密渠道返还。
-6. 不要把图片或标注包上传到 GitHub。停止服务后可备份整个 `annotations/` 文件夹；服务运行时不要只拷贝 SQLite 主文件而漏掉 WAL。
+6. 标注已逐次自动写入上述本地文件夹；仍建议每批完成后导出完整 JSON 作为异机备份。不要把图片或标注包上传到 GitHub。停止服务后可备份整个 `annotations/` 文件夹；服务运行时不要只拷贝 SQLite 主文件而漏掉 WAL。
 
 想先熟悉操作、又没有原图时，可生成明确标识的合成练习图（不是真实医学影像）：
 

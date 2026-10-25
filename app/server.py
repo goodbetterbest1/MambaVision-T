@@ -227,14 +227,14 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/images/"):
                 return self._serve_image(urllib.parse.unquote(path.removeprefix("/images/")))
             if path == "/api/config":
-                return self._json({"schema_version": "dent-alveolar-annotation-v2", "data_dir": str(self.state.data_dir), "has_public_polygons": bool(self.state.coco_path)})
+                return self._json({"schema_version": "dent-alveolar-annotation-v2", "data_dir": str(self.state.data_dir), "has_public_polygons": bool(self.state.coco_path), "storage": self.state.db.storage_info()})
             if path == "/api/images":
                 records = []
                 saved = {case["image_id"]: case for case in self.state.db.list()}
                 for image in self.state.images():
                     case = saved.get(image["image_id"])
                     records.append({**image, "saved": bool(case), "review_status": case.get("review_status", "unreviewed") if case else "unreviewed", "case_grade": case.get("case_grade", "unreviewed") if case else "unreviewed"})
-                return self._json({"images": records, "image_errors": self.state.image_errors})
+                return self._json({"images": records, "image_errors": self.state.image_errors, "storage": self.state.db.storage_info()})
             match = re.fullmatch(r"/api/annotations/([^/]+)", path)
             if match:
                 image_id = urllib.parse.unquote(match.group(1))
@@ -286,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._error("image not found", 404)
             payload = {**image, **payload, "image_id": image_id, "filename": image["filename"], "width": image["width"], "height": image["height"]}
             saved = self.state.db.save(validate_case_payload(payload, require_identity=True))
-            self._json({"case": saved})
+            self._json({"case": saved, "storage": self.state.db.storage_info()})
         except ValueError as exc:
             self._error(str(exc), 400)
         except Exception as exc:
@@ -313,6 +313,7 @@ class Handler(BaseHTTPRequestHandler):
                     # Use the local file identity/shape as the source of truth; do not import a stale filename.
                     matched.append({**case, "filename": image["filename"], "width": image["width"], "height": image["height"]})
                 result = self.state.db.import_cases(matched, strategy=strategy)
+                result["storage"] = self.state.db.storage_info()
                 result["skipped_unknown"] = len(skipped_unknown)
                 result["unknown_image_ids"] = skipped_unknown[:20]
                 return self._json(result)
@@ -352,6 +353,9 @@ def serve(host: str, port: int, state: AppState) -> None:
     try:
         print(f"Dental annotation tool: http://{host}:{port}/")
         print(f"Image directory: {state.data_dir}")
+        print(f"Autosave database: {state.db.path}")
+        print(f"Automatic JSON mirror: {state.db.json_dir}")
+        print("Keep this service running while annotating. No image/annotation upload is performed.")
         server.serve_forever()
     except KeyboardInterrupt:
         pass

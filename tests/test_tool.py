@@ -72,12 +72,17 @@ class HTTPTests(unittest.TestCase):
                 status, listing = get_json(base + "/api/images")
                 self.assertEqual(status, 200)
                 self.assertEqual(len(listing["images"]), 1)
+                self.assertEqual(listing["storage"]["database_path"], str((root / "annotations.sqlite3").resolve()))
+                self.assertEqual(listing["storage"]["json_directory"], str((root / "annotations_json").resolve()))
                 image = listing["images"][0]
                 self.assertEqual((image["width"], image["height"]), (2, 1))
                 payload = {"annotator_id": "test", "upper_crest_segments": [[[.1, .2], [.8, .25]]], "severity_points": [{"x": .4, "y": .3, "jaw": "upper", "severity": "moderate", "confidence": "high"}], "case_grade": "moderate", "review_status": "complete"}
                 status, saved = request_json(base + "/api/annotations/" + image["image_id"], "PUT", payload)
                 self.assertEqual(status, 200)
                 self.assertEqual(saved["case"]["annotation_version"], 1)
+                self.assertEqual(saved["storage"]["snapshot_warning"], None)
+                snapshot = root / "annotations_json" / f"{image['image_id']}.json"
+                self.assertEqual(json.loads(snapshot.read_text())["case_grade"], "moderate")
                 status, fetched = get_json(base + "/api/annotations/" + image["image_id"])
                 self.assertEqual(fetched["case"]["case_grade"], "moderate")
                 status, evidence = get_json(base + "/api/evidence/" + image["image_id"])

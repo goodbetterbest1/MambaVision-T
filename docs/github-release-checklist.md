@@ -6,6 +6,7 @@
 - `app/`
 - `web/`
 - `tools/merge_annotations.py`
+- `tools/prepare_images.py`（只解压本地授权 ZIP，不下载数据）
 - `tests/`（Python API/持久化与 Node 保存回归）
 - `docs/annotation-schema.json`
 - `docs/annotation-guidelines.md`
