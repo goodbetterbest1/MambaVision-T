@@ -40,7 +40,7 @@
           <button class="tool" data-tool="point" title="点击影像添加严重度位置点"><span class="point-icon"></span>严重度点</button>
         </div>
         <div class="toolgroup toolgroup-right">
-          <label class="toggle"><input id="showPublic" type="checkbox"><span></span>公开牙区标注</label>
+          <label class="toggle"><input id="showPublic" type="checkbox"><span></span>公开牙区标注（检查中）</label>
           <button id="zoomOut" class="icon-button" title="缩小">−</button><button id="zoomIn" class="icon-button" title="放大">＋</button><button id="fitBtn" class="icon-button" title="适合窗口">适合</button>
         </div>
       </div>
@@ -86,7 +86,7 @@
         <section class="evidence-card"><div class="evidence-header"><div><span class="eyebrow">可审计摘要</span><strong>结构化证据预览</strong></div><button id="copyEvidence" class="text-button">复制 JSON</button></div><pre id="evidencePreview">尚无可用标注</pre><p>摘要只复述标注，不自动推导临床分期或 RBL 百分比。</p></section>
       </div>
       <div class="inspector-footer">
-        <div class="utility-actions"><button id="undoBtn" class="text-button">撤销最近点/线</button><button id="clearBtn" class="text-button danger-text">清除当前线</button></div>
+        <div class="utility-actions"><button id="undoBtn" class="text-button" title="撤回上一次绘线或位置点操作，也可使用 Ctrl/⌘+Z">撤回上一步</button><button id="clearBtn" class="text-button danger-text">清除当前线</button></div>
         <div class="export-row"><button id="importBtn" class="button secondary">导入 JSON</button><div class="export-menu"><button id="exportBtn" class="button secondary">导出 ▾</button><div id="exportMenu" class="menu hidden"><a href="/api/export?format=json">完整 JSON</a><a href="/api/export?format=jsonl">JSONL</a><a href="/api/export?format=csv">汇总 CSV</a><a href="/api/export?format=evidence">结构化证据 JSONL</a></div></div></div>
         <label class="field-label">导入同图记录时<select id="importStrategy"><option value="keep_local">保留本机已有标注（默认）</option><option value="replace">替换并保留旧版本历史</option></select></label>
         <div id="storageInfo" class="storage-info" role="status">标注自动保存至本机；正在读取保存目录…</div>

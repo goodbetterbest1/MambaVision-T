@@ -9,7 +9,7 @@
     evidencePreview: $('#evidencePreview'), toolHint: $('#toolHint'), zoomLabel: $('#zoomLabel'), toast: $('#toast'),
   };
   const ctx = els.canvas.getContext('2d');
-  const state = { images: [], index: -1, current: null, tool: 'view', dirty: false, saving: false, saveTimer: null, saveSeq: 0, savePromise: null, editRevision: 0, loading: false, loadSeq: 0, zoom: 1, publicPolygons: [], filter: 'all', selectedPoint: null, draftLine: null, toastTimer: null };
+  const state = { images: [], index: -1, current: null, tool: 'view', dirty: false, saving: false, saveTimer: null, saveSeq: 0, savePromise: null, editRevision: 0, loading: false, loadSeq: 0, zoom: 1, publicPolygons: [], publicStatus: null, autosaveDelayMs: 750, undoDepth: 100, filter: 'all', selectedPoint: null, draftLine: null, annotationHistory: [], toastTimer: null };
   const labels = { mild: '轻度', moderate: '中度', severe: '重度', none: '未见明显吸收', uncertain: '不确定', ungradable: '不可评估', upper: '上颌', lower: '下颌', unknown: '不确定' };
   const colors = { upper: '#91dac4', lower: '#83b7f4', mild: '#91dac4', moderate: '#f0c36d', severe: '#ef8a78', none: '#aab4b0', uncertain: '#c294e8', ungradable: '#85939a' };
   let toastTimeout;
@@ -22,20 +22,36 @@
 
   async function request(url, options={}) { const response = await fetch(url, options); const data = response.headers.get('content-type')?.includes('application/json') ? await response.json() : null; if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`); return data; }
 
-  function showStorage(storage) {
+  function showStorage(storage, config) {
     if(!storage)return;
+    if(config){ state.autosaveDelayMs=config.autosave_delay_ms||750; state.undoDepth=config.undo_depth||100; }
     const info=$('#storageInfo');
-    info.textContent=`自动保存至本机 · SQLite：${storage.database_path} · JSON：${storage.json_directory}`;
+    info.textContent=`自动保存 ${state.autosaveDelayMs} ms · 撤回保留 ${state.undoDepth} 步 · SQLite：${storage.database_path} · JSON：${storage.json_directory}`;
     info.classList.toggle('warning',!!storage.snapshot_warning);
     info.title=storage.snapshot_warning||'数据库为主记录；每次保存同时更新对应影像的本机 JSON 文件。';
     if(storage.snapshot_warning)toast('数据库已保存，但 JSON 镜像写入失败。请检查磁盘空间/目录权限。',true);
+  }
+
+  function showPublicStatus(status) {
+    state.publicStatus = status || null;
+    const toggle = $('#showPublic');
+    const label = toggle?.closest('.toggle');
+    if (!toggle || !label) return;
+    const loaded = !!status?.loaded;
+    toggle.disabled = !loaded;
+    label.title = loaded
+      ? `已加载 ${status.matched_images || 0} 张影像的公开牙区标注`
+      : '未加载 COCO 牙区标注。将 via_export_coco_BL.json 放入 data/imports/ 后重启服务。';
+    const text = label.lastChild;
+    if (text) text.textContent = loaded ? `公开牙区标注（${status.matched_images || 0} 张）` : '公开牙区标注（未加载）';
+    if (!loaded) toggle.checked = false;
   }
 
   async function loadImages() {
     if (!(await flushChanges())) return;
     setStatus('', '扫描影像…');
     try {
-      const data = await request('/api/images'); state.images = data.images;showStorage(data.storage);
+      const data = await request('/api/images'); state.images = data.images;showStorage(data.storage,data.annotation_config);showPublicStatus(data.public_polygons);
       if(data.image_errors?.length)toast(`有 ${data.image_errors.length} 张图片无法读取尺寸，已跳过。请使用 PNG/JPEG 或安装 Pillow 后刷新。`,true);
       if (!state.images.length) { state.index = -1; state.current = null; renderList(); renderCurrent(); setStatus('', '尚未保存'); return; }
       const oldId = state.current?.image_id;
@@ -75,8 +91,8 @@
     try {
       const result = await request(`/api/annotations/${encodeURIComponent(image.image_id)}`);
       if (loadId !== state.loadSeq) return;
-      state.current = result.case; state.publicPolygons = result.public_polygons || [];
-      state.dirty = false; state.selectedPoint = null; state.zoom = 1;
+      state.current = result.case; state.publicPolygons = result.public_polygons || [];showPublicStatus(result.public_status);
+      state.dirty = false; state.selectedPoint = null; state.zoom = 1; state.annotationHistory = [];
       els.image.onload = () => { fitImage(); drawOverlay(); };
       els.image.onerror = () => toast('浏览器无法解码此影像格式，请转换为 PNG 或 JPEG。', true);
       els.image.src = image.url;
@@ -126,7 +142,19 @@
   function drawPolygons() {
     const sx=els.canvas.width/(state.current?.width||1),sy=els.canvas.height/(state.current?.height||1);
     ctx.save();ctx.strokeStyle='#f2d980';ctx.fillStyle='#f2d98022';ctx.lineWidth=2;ctx.setLineDash([8,6]);
-    for(const item of state.publicPolygons){for(const segmentation of item.segmentation||[]){if(!Array.isArray(segmentation)||segmentation.length<6)continue;ctx.beginPath();ctx.moveTo(segmentation[0]*sx,segmentation[1]*sy);for(let i=2;i+1<segmentation.length;i+=2)ctx.lineTo(segmentation[i]*sx,segmentation[i+1]*sy);ctx.closePath();ctx.fill();ctx.stroke();}}
+    for(const item of state.publicPolygons){
+      const sourceWidth=item.source_width>0?item.source_width:(state.current?.width||1);
+      const sourceHeight=item.source_height>0?item.source_height:(state.current?.height||1);
+      const scaleX=els.canvas.width/sourceWidth, scaleY=els.canvas.height/sourceHeight;
+      const raw=item.segmentation;
+      const polygons=Array.isArray(raw)&&raw.length&&typeof raw[0]==='number'?[raw]:raw;
+      for(const segmentation of polygons||[]){
+        if(!Array.isArray(segmentation)||segmentation.length<6)continue;
+        ctx.beginPath();ctx.moveTo(segmentation[0]*scaleX,segmentation[1]*scaleY);
+        for(let i=2;i+1<segmentation.length;i+=2)ctx.lineTo(segmentation[i]*scaleX,segmentation[i+1]*scaleY);
+        ctx.closePath();ctx.fill();ctx.stroke();
+      }
+    }
     ctx.restore();
   }
   function drawPoints() {
@@ -146,7 +174,36 @@
     const hints={view:'浏览模式：检查影像与标注。',upper:'上颌线：按住鼠标左键沿可见牙槽嵴绘制；在采样稀疏区域补点。',lower:'下颌线：按住鼠标左键沿可见牙槽嵴绘制。',point:'严重度点：先在右侧选择颌别与等级，再点击影像添加位置点。'};els.toolHint.textContent=hints[state.tool];
   }
 
-  function markDirty() { if(!state.current || state.loading)return;state.editRevision+=1;state.dirty=true;setStatus('saving','有未保存修改');updateEvidence();clearTimeout(state.saveTimer);state.saveTimer=setTimeout(saveCurrent,750); }
+  function annotationSnapshot() {
+    if (!state.current) return null;
+    return JSON.parse(JSON.stringify({
+      upper_crest_segments: state.current.upper_crest_segments || [],
+      lower_crest_segments: state.current.lower_crest_segments || [],
+      severity_points: state.current.severity_points || [],
+    }));
+  }
+
+  function pushAnnotationHistory() {
+    const snapshot = annotationSnapshot();
+    if (!snapshot) return;
+    state.annotationHistory.push(snapshot);
+    if (state.annotationHistory.length > state.undoDepth) state.annotationHistory.shift();
+  }
+
+  function undoLastAnnotation() {
+    if (!state.current || !state.annotationHistory.length) {
+      toast('没有可撤回的线段或位置点。', true);
+      return;
+    }
+    const snapshot = state.annotationHistory.pop();
+    state.current.upper_crest_segments = snapshot.upper_crest_segments;
+    state.current.lower_crest_segments = snapshot.lower_crest_segments;
+    state.current.severity_points = snapshot.severity_points;
+    renderPointList();drawOverlay();markDirty();
+    toast('已撤回上一次线段/位置点操作。');
+  }
+
+  function markDirty() { if(!state.current || state.loading)return;state.editRevision+=1;state.dirty=true;setStatus('saving','有未保存修改');updateEvidence();clearTimeout(state.saveTimer);state.saveTimer=setTimeout(saveCurrent,state.autosaveDelayMs); }
   function collectForm() {
     return {...state.current,annotator_id:els.annotator.value.trim(),image_quality:els.quality.value,case_grade:els.grade.value,review_status:els.review.value,notes:els.notes.value,explanation_sample:{enabled:els.explanationEnabled.checked,finding:els.finding.value,evidence:els.evidence.value,desired_explanation:els.desired.value,uncertainty:els.uncertainty.value,review_status:'pending'}};
   }
@@ -171,7 +228,7 @@
           state.images=state.images.map(item=>item.image_id===imageId?{...item,saved:true,review_status:response.case.review_status,case_grade:response.case.case_grade}:item);
           setStatus(changed?'saving':'saved',changed?'有新修改待保存':'已保存');updateEvidence();renderList();
         }
-        showStorage(response.storage);
+        showStorage(response.storage,response.annotation_config);
         success=true;
       }catch(error){setStatus('error','保存失败');toast(`保存失败：${error.message}；修改仍保留在页面中。`,true);}
       finally{
@@ -205,9 +262,9 @@
   function updateEvidence() { const value=evidenceObject();els.evidencePreview.textContent=value?JSON.stringify(value,null,2):'尚无可用标注'; }
 
   function pointerPosition(event) { const rect=els.canvas.getBoundingClientRect();return [Math.min(1,Math.max(0,(event.clientX-rect.left)/rect.width)),Math.min(1,Math.max(0,(event.clientY-rect.top)/rect.height))]; }
-  els.canvas.addEventListener('pointerdown',(event)=>{if(!state.current || state.loading || event.button!==0)return;if(state.tool==='point'){const [x,y]=pointerPosition(event);state.current.severity_points.push({id:`p${Date.now()}${Math.floor(Math.random()*1000)}`,x,y,jaw:els.pointJaw.value,severity:els.pointSeverity.value,confidence:els.pointConfidence.value,note:''});renderPointList();drawOverlay();markDirty();return;}if(state.tool==='upper'||state.tool==='lower'){event.preventDefault();els.canvas.setPointerCapture(event.pointerId);const [x,y]=pointerPosition(event);state.draftLine={type:state.tool,points:[[x,y]]};drawOverlay();}});
+  els.canvas.addEventListener('pointerdown',(event)=>{if(!state.current || state.loading || event.button!==0)return;if(state.tool==='point'){pushAnnotationHistory();const [x,y]=pointerPosition(event);state.current.severity_points.push({id:`p${Date.now()}${Math.floor(Math.random()*1000)}`,x,y,jaw:els.pointJaw.value,severity:els.pointSeverity.value,confidence:els.pointConfidence.value,note:''});renderPointList();drawOverlay();markDirty();return;}if(state.tool==='upper'||state.tool==='lower'){event.preventDefault();els.canvas.setPointerCapture(event.pointerId);const [x,y]=pointerPosition(event);state.draftLine={type:state.tool,points:[[x,y]]};drawOverlay();}});
   els.canvas.addEventListener('pointermove',(event)=>{if(!state.draftLine)return;const [x,y]=pointerPosition(event);const last=state.draftLine.points.at(-1);const dx=(x-last[0])*els.canvas.width,dy=(y-last[1])*els.canvas.height;if(Math.hypot(dx,dy)>Math.max(3,els.canvas.width/1200)){state.draftLine.points.push([x,y]);drawOverlay();}});
-  function finishLine(){if(!state.draftLine)return;const line=state.draftLine;state.draftLine=null;if(line.points.length<2){drawOverlay();return;}state.current[line.type==='upper'?'upper_crest_segments':'lower_crest_segments'].push(line.points);drawOverlay();markDirty();}
+  function finishLine(){if(!state.draftLine)return;const line=state.draftLine;state.draftLine=null;if(line.points.length<2){drawOverlay();return;}pushAnnotationHistory();state.current[line.type==='upper'?'upper_crest_segments':'lower_crest_segments'].push(line.points);drawOverlay();markDirty();}
   els.canvas.addEventListener('pointerup',finishLine);els.canvas.addEventListener('pointercancel',finishLine);
 
   function bindField(element, event='change') { element.addEventListener(event,()=>{if(element===els.annotator){localStorage.setItem('dental-annotator-id',element.value.trim());}if(element===els.explanationEnabled)els.explanationFields.classList.toggle('hidden',!element.checked);markDirty();}); }
@@ -218,13 +275,13 @@
   $('#prevBtn').addEventListener('click',()=>selectImage(state.index-1));$('#nextBtn').addEventListener('click',()=>selectImage(state.index+1));
   $('#zoomIn').addEventListener('click',()=>{state.zoom=Math.min(3,state.zoom*1.2);fitImage();});$('#zoomOut').addEventListener('click',()=>{state.zoom=Math.max(.35,state.zoom/1.2);fitImage();});$('#fitBtn').addEventListener('click',()=>{state.zoom=1;fitImage();});
   els.saveBtn.addEventListener('click',flushChanges);
-  $('#undoBtn').addEventListener('click',()=>{if(!state.current)return;if(state.tool==='upper')state.current.upper_crest_segments.pop();else if(state.tool==='lower')state.current.lower_crest_segments.pop();else if(state.current.severity_points.length){state.current.severity_points.pop();renderPointList();}else if(state.current.lower_crest_segments.length)state.current.lower_crest_segments.pop();else state.current.upper_crest_segments.pop();drawOverlay();markDirty();});
-  $('#clearBtn').addEventListener('click',()=>{if(!state.current)return;if(state.tool==='upper')state.current.upper_crest_segments=[];else if(state.tool==='lower')state.current.lower_crest_segments=[];else if(state.tool==='point'){state.current.severity_points=[];renderPointList();}else{state.current.upper_crest_segments=[];state.current.lower_crest_segments=[];}drawOverlay();markDirty();});
+  $('#undoBtn').addEventListener('click',undoLastAnnotation);
+  $('#clearBtn').addEventListener('click',()=>{if(!state.current)return;pushAnnotationHistory();if(state.tool==='upper')state.current.upper_crest_segments=[];else if(state.tool==='lower')state.current.lower_crest_segments=[];else if(state.tool==='point'){state.current.severity_points=[];renderPointList();}else{state.current.upper_crest_segments=[];state.current.lower_crest_segments=[];}drawOverlay();markDirty();});
   document.querySelectorAll('#exportMenu a').forEach(link=>link.addEventListener('click',async event=>{event.preventDefault();if(await flushChanges()){window.location.assign(link.href);$('#exportMenu').classList.add('hidden');}}));
   $('#exportBtn').addEventListener('click',()=>$('#exportMenu').classList.toggle('hidden'));document.addEventListener('click',(event)=>{if(!event.target.closest('.export-menu'))$('#exportMenu').classList.add('hidden');});
   $('#importBtn').addEventListener('click',()=>$('#importFile').click());$('#importFile').addEventListener('change',async(event)=>{const file=event.target.files[0];if(!file)return;try{if(!(await flushChanges()))return;const payload=JSON.parse(await file.text());const result=await request('/api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payload,strategy:$('#importStrategy').value})});toast(`导入完成：${result.imported} 条，已跳过 ${result.skipped + (result.skipped_unknown || 0)} 条`);await loadImages();}catch(error){toast(`导入失败：${error.message}`,true);}finally{event.target.value='';}});
   $('#copyEvidence').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(JSON.stringify(evidenceObject(),null,2));toast('证据 JSON 已复制');}catch{toast('复制失败，请手动选择预览内容',true);}});
-  document.addEventListener('keydown',(event)=>{const tag=document.activeElement?.tagName;if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'){event.preventDefault();flushChanges();return;}if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;if(event.key==='ArrowLeft')selectImage(state.index-1);if(event.key==='ArrowRight')selectImage(state.index+1);if(event.key==='/'){event.preventDefault();els.search.focus();}});
+  document.addEventListener('keydown',(event)=>{const tag=document.activeElement?.tagName;if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'){event.preventDefault();flushChanges();return;}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='z'&&!['INPUT','TEXTAREA','SELECT'].includes(tag)){event.preventDefault();undoLastAnnotation();return;}if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;if(event.key==='ArrowLeft')selectImage(state.index-1);if(event.key==='ArrowRight')selectImage(state.index+1);if(event.key==='/'){event.preventDefault();els.search.focus();}});
   new ResizeObserver(()=>fitImage()).observe(els.viewport);
   window.addEventListener('beforeunload',(event)=>{if(state.dirty){event.preventDefault();event.returnValue='';}});
   loadImages();

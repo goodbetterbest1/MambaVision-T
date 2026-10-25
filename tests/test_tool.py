@@ -108,6 +108,29 @@ class HTTPTests(unittest.TestCase):
             finally:
                 server.shutdown(); server.server_close(); state.close(); thread.join(timeout=2)
 
+    def test_coco_overlay_is_auto_discovered_and_matches_basename(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            images = root / "images"
+            imports = root / "imports"
+            images.mkdir(); imports.mkdir()
+            (images / "case.png").write_bytes(PNG_2X1)
+            (imports / "via_export_coco_BL.json").write_text(json.dumps({
+                "images": [{"id": 1, "file_name": "nested/case.png", "width": 2, "height": 1}],
+                "categories": [{"id": 1, "name": "moderate"}],
+                "annotations": [{"id": 1, "image_id": 1, "category_id": 1, "segmentation": [[[0, 0, 2, 0, 2, 1, 0, 1]]]}],
+            }), encoding="utf-8")
+            state = AppState(images, root / "annotations.sqlite3")
+            try:
+                image = state.images()[0]
+                polygons = state.public_for_image(image["filename"])
+                self.assertEqual(len(polygons), 1)
+                self.assertEqual(polygons[0]["source_width"], 2)
+                self.assertEqual(state.public_status()["matched_images"], 1)
+                self.assertEqual(state.public_status()["unmatched_annotations"], 0)
+            finally:
+                state.close()
+
 
 if __name__ == "__main__":
     unittest.main()

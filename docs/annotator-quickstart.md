@@ -15,6 +15,19 @@
 - Linux：执行 `python3 run_local.py`。
 - 打开 http://127.0.0.1:8000/，不要直接双击网页 HTML。
 
+正式配置建议：
+
+```bash
+python3 run_local.py \
+  --data data/images \
+  --db annotations/annotator_A.sqlite3 \
+  --coco data/imports/via_export_coco_BL.json \
+  --autosave-delay-ms 750 \
+  --undo-depth 100
+```
+
+`--coco` 是只读辅助标注；`--autosave-delay-ms` 是自动保存防抖时间；`--undo-depth` 是线段/点位撤回栈深度。服务启动后网页底部会显示这些配置和实际保存路径。
+
 ## 每例操作
 
 1. 填写唯一标注者 ID，检查原图是否清晰。
@@ -27,6 +40,8 @@
 ## 本机自动保存
 
 完成一笔/修改字段后约 750 ms 自动保存，不需要每次导出。默认写入 `annotations/annotator.sqlite3` 及 `annotations/annotator_json/<image_id>.json`。带 `--db annotations/annotator_A.sqlite3` 启动则写入 A 对应的数据库和 `annotator_A_json/` 文件夹。主库保存完整修订历史，JSON 保存最新标注；网页右下角显示真实路径。顶部保存失败或右下角 JSON 警告时请处理，不要直接关闭。
+
+“撤回上一步”或 `Ctrl/⌘+Z` 只撤回最近的绘线/位置点操作；病例等级、备注和解释文字需要人工修改后再次保存。切换病例或刷新页面会清空网页撤回栈，但不会删除 SQLite 历史。
 
 ## 交付
 

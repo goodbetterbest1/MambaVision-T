@@ -30,7 +30,7 @@ function harness() {
     },console
   };
   const source=readFileSync(join(__dirname,'../web/app.js'),'utf8');
-  vm.runInNewContext(source.replace(/\}\)\(\);\s*$/, 'window.testHooks={state,saveCurrent,flushChanges,markDirty,collectForm};})();'),context);
+  vm.runInNewContext(source.replace(/\}\)\(\);\s*$/, 'window.testHooks={state,saveCurrent,flushChanges,markDirty,collectForm,undoLastAnnotation};})();'),context);
   return {hooks:context.window.testHooks,pending,timers,elements};
 }
 function caseRecord() {
@@ -76,4 +76,11 @@ test('failed save preserves unsaved edits and does not auto-retry forever',async
 test('flush refuses navigation/export during an unfinished stroke',async()=>{
   const h=await prepare();h.hooks.state.draftLine={type:'upper',points:[[.1,.2]]};
   assert.equal(await h.hooks.flushChanges(),false);assert.equal(h.pending.length,0);
+});
+test('undo restores the previous line and point state',async()=>{
+  const h=await prepare();
+  h.hooks.state.current.upper_crest_segments.push([[.1,.2],[.3,.4]]);
+  h.hooks.state.annotationHistory=[{upper_crest_segments:[],lower_crest_segments:[],severity_points:[]}];
+  h.hooks.undoLastAnnotation();
+  assert.deepEqual(h.hooks.state.current.upper_crest_segments,[]);
 });

@@ -79,15 +79,32 @@ def stable_image_id(path: Path, root: Path) -> str:
 
 
 class AppState:
-    def __init__(self, data_dir: str | Path, db_path: str | Path, coco_path: str | Path | None = None):
+    def __init__(self, data_dir: str | Path, db_path: str | Path, coco_path: str | Path | None = None, autosave_delay_ms: int = 750, undo_depth: int = 100):
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.db = AnnotationDB(db_path)
-        self.coco_path = Path(coco_path).expanduser().resolve() if coco_path else None
+        self.coco_path = self._resolve_coco_path(coco_path)
+        self.autosave_delay_ms = max(100, min(int(autosave_delay_ms), 10000))
+        self.undo_depth = max(1, min(int(undo_depth), 500))
         self.lock = threading.RLock()
         self._images: list[dict[str, Any]] | None = None
         self.image_errors: list[dict[str, str]] = []
         self._public_polygons: dict[str, list[dict[str, Any]]] | None = None
+        self._public_polygon_stats: dict[str, Any] = {"images": 0, "annotations": 0, "matched_images": 0, "unmatched_annotations": 0}
+
+    def _resolve_coco_path(self, coco_path: str | Path | None) -> Path | None:
+        if coco_path:
+            candidate = Path(coco_path).expanduser().resolve()
+            return candidate if candidate.is_file() else None
+        for candidate in (
+            self.data_dir.parent / "imports" / "via_export_coco_BL.json",
+            self.data_dir.parent / "imports" / "via_export_coco_BL.jsonl",
+            self.data_dir / "via_export_coco_BL.json",
+        ):
+            candidate = candidate.resolve()
+            if candidate.is_file():
+                return candidate
+        return None
 
     def close(self) -> None:
         self.db.close()
@@ -135,30 +152,71 @@ class AppState:
         if self._public_polygons is not None:
             return self._public_polygons
         result: dict[str, list[dict[str, Any]]] = {}
+        self._public_polygon_stats = {"images": 0, "annotations": 0, "matched_images": 0, "unmatched_annotations": 0}
         if not self.coco_path or not self.coco_path.is_file():
             self._public_polygons = result
             return result
         try:
             value = json.loads(self.coco_path.read_text(encoding="utf-8"))
             images = {int(item["id"]): item for item in value.get("images", [])}
+            self._public_polygon_stats["images"] = len(images)
             categories = {int(item["id"]): item.get("name", "unknown") for item in value.get("categories", [])}
+            known_names = {self._normalize_filename(item["filename"]): item for item in self.images()}
+            basename_names: dict[str, dict[str, Any]] = {}
+            for item in self.images():
+                basename_names.setdefault(Path(item["filename"]).name.casefold(), item)
+            matched_keys: set[str] = set()
             for annotation in value.get("annotations", []):
+                self._public_polygon_stats["annotations"] += 1
                 image = images.get(int(annotation.get("image_id")))
                 if not image:
                     continue
-                key = Path(str(image.get("file_name", ""))).as_posix()
+                source_name = self._normalize_filename(image.get("file_name", ""))
+                local_image = known_names.get(source_name)
+                if local_image is None:
+                    local_image = basename_names.get(Path(source_name).name.casefold())
+                if local_image is None:
+                    self._public_polygon_stats["unmatched_annotations"] += 1
+                    continue
+                key = local_image["filename"]
+                matched_keys.add(key)
                 result.setdefault(key, []).append({
                     "category": categories.get(int(annotation.get("category_id", -1)), "unknown"),
                     "segmentation": annotation.get("segmentation", []),
                     "bbox": annotation.get("bbox"),
+                    "source_width": int(image.get("width") or 0),
+                    "source_height": int(image.get("height") or 0),
                 })
+            self._public_polygon_stats["matched_images"] = len(matched_keys)
         except Exception:
             result = {}
         self._public_polygons = result
         return result
 
     def public_for_image(self, filename: str) -> list[dict[str, Any]]:
-        return self.public_polygons().get(Path(filename).as_posix(), [])
+        return self.public_polygons().get(filename, [])
+
+    @staticmethod
+    def _normalize_filename(filename: Any) -> str:
+        value = urllib.parse.unquote(str(filename or "")).replace("\\", "/")
+        parts = [part for part in value.split("/") if part not in ("", ".")]
+        return "/".join(parts).casefold()
+
+    def public_status(self) -> dict[str, Any]:
+        self.public_polygons()
+        return {
+            "loaded": bool(self.coco_path and self.coco_path.is_file()),
+            "source": str(self.coco_path) if self.coco_path else None,
+            **self._public_polygon_stats,
+        }
+
+    def annotation_config(self) -> dict[str, Any]:
+        return {
+            "autosave_delay_ms": self.autosave_delay_ms,
+            "undo_depth": self.undo_depth,
+            "undo_scope": "geometry_and_points",
+            "save_backend": "sqlite_plus_case_json",
+        }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -227,14 +285,14 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/images/"):
                 return self._serve_image(urllib.parse.unquote(path.removeprefix("/images/")))
             if path == "/api/config":
-                return self._json({"schema_version": "dent-alveolar-annotation-v2", "data_dir": str(self.state.data_dir), "has_public_polygons": bool(self.state.coco_path), "storage": self.state.db.storage_info()})
+                return self._json({"schema_version": "dent-alveolar-annotation-v2", "data_dir": str(self.state.data_dir), "has_public_polygons": bool(self.state.coco_path), "public_polygons": self.state.public_status(), "annotation_config": self.state.annotation_config(), "storage": self.state.db.storage_info()})
             if path == "/api/images":
                 records = []
                 saved = {case["image_id"]: case for case in self.state.db.list()}
                 for image in self.state.images():
                     case = saved.get(image["image_id"])
                     records.append({**image, "saved": bool(case), "review_status": case.get("review_status", "unreviewed") if case else "unreviewed", "case_grade": case.get("case_grade", "unreviewed") if case else "unreviewed"})
-                return self._json({"images": records, "image_errors": self.state.image_errors, "storage": self.state.db.storage_info()})
+                return self._json({"images": records, "image_errors": self.state.image_errors, "public_polygons": self.state.public_status(), "annotation_config": self.state.annotation_config(), "storage": self.state.db.storage_info()})
             match = re.fullmatch(r"/api/annotations/([^/]+)", path)
             if match:
                 image_id = urllib.parse.unquote(match.group(1))
@@ -242,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not image:
                     return self._error("image not found", 404)
                 case = self.state.db.get(image_id) or empty_case(image)
-                return self._json({"case": case, "public_polygons": self.state.public_for_image(image["filename"])})
+                return self._json({"case": case, "public_polygons": self.state.public_for_image(image["filename"]), "public_status": self.state.public_status(), "annotation_config": self.state.annotation_config()})
             match = re.fullmatch(r"/api/evidence/([^/]+)", path)
             if match:
                 image_id = urllib.parse.unquote(match.group(1))
@@ -286,7 +344,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._error("image not found", 404)
             payload = {**image, **payload, "image_id": image_id, "filename": image["filename"], "width": image["width"], "height": image["height"]}
             saved = self.state.db.save(validate_case_payload(payload, require_identity=True))
-            self._json({"case": saved, "storage": self.state.db.storage_info()})
+            self._json({"case": saved, "storage": self.state.db.storage_info(), "annotation_config": self.state.annotation_config()})
         except ValueError as exc:
             self._error(str(exc), 400)
         except Exception as exc:
@@ -314,6 +372,7 @@ class Handler(BaseHTTPRequestHandler):
                     matched.append({**case, "filename": image["filename"], "width": image["width"], "height": image["height"]})
                 result = self.state.db.import_cases(matched, strategy=strategy)
                 result["storage"] = self.state.db.storage_info()
+                result["annotation_config"] = self.state.annotation_config()
                 result["skipped_unknown"] = len(skipped_unknown)
                 result["unknown_image_ids"] = skipped_unknown[:20]
                 return self._json(result)
