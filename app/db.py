@@ -11,7 +11,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .schema import utc_now, validate_case_payload
+from .schema import apply_annotation_policy, utc_now, validate_case_payload
 
 
 class AnnotationDB:
@@ -84,15 +84,15 @@ class AnnotationDB:
     def get(self, image_id: str) -> dict[str, Any] | None:
         with self.lock:
             row = self.conn.execute("SELECT payload_json FROM annotations WHERE image_id = ?", (image_id,)).fetchone()
-            return validate_case_payload(json.loads(row["payload_json"]), require_identity=True) if row else None
+            return apply_annotation_policy(json.loads(row["payload_json"]), require_identity=True) if row else None
 
     def list(self) -> list[dict[str, Any]]:
         with self.lock:
             rows = self.conn.execute("SELECT payload_json FROM annotations ORDER BY filename COLLATE NOCASE").fetchall()
-            return [validate_case_payload(json.loads(row["payload_json"]), require_identity=True) for row in rows]
+            return [apply_annotation_policy(json.loads(row["payload_json"]), require_identity=True) for row in rows]
 
     def save(self, payload: dict[str, Any]) -> dict[str, Any]:
-        case = validate_case_payload(payload, require_identity=True)
+        case = apply_annotation_policy(payload, require_identity=True)
         with self.lock:
             current = self.get(case["image_id"])
             now = utc_now()
@@ -133,7 +133,7 @@ class AnnotationDB:
         if strategy not in {"replace", "keep_local"}:
             raise ValueError("strategy must be replace or keep_local")
         # Validate the entire batch before changing any records.
-        validated = [validate_case_payload(raw, require_identity=True) for raw in cases]
+        validated = [apply_annotation_policy(raw, require_identity=True) for raw in cases]
         imported = skipped = 0
         with self.lock:
             for case in validated:

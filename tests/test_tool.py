@@ -11,7 +11,7 @@ import unittest
 
 from app.db import AnnotationDB
 from app.import_export import export_json, export_jsonl, parse_import
-from app.schema import validate_case_payload, summarize_evidence
+from app.schema import apply_annotation_policy, derive_case_grade, validate_case_payload, summarize_evidence
 from app.server import AppState, make_server
 
 # 2x1 transparent PNG; the server's header parser can read its dimensions without Pillow.
@@ -31,6 +31,14 @@ def request_json(url: str, method: str, value):
 
 
 class SchemaAndDBTests(unittest.TestCase):
+    def test_annotation_policy_derives_grade_and_completion(self):
+        self.assertEqual(derive_case_grade([]), "none")
+        self.assertEqual(derive_case_grade([{"severity": "mild"}, {"severity": "severe"}]), "severe")
+        blank = apply_annotation_policy({"image_id": "blank", "filename": "blank.png"}, require_identity=True)
+        self.assertEqual((blank["image_quality"], blank["case_grade"], blank["review_status"]), ("good", "unreviewed", "in_progress"))
+        normal = apply_annotation_policy({"image_id": "normal", "filename": "normal.png", "upper_crest_segments": [[[.1, .2], [.3, .2]]]}, require_identity=True)
+        self.assertEqual((normal["image_quality"], normal["case_grade"], normal["review_status"]), ("good", "none", "complete"))
+
     def test_validation_and_evidence(self):
         case = validate_case_payload({
             "image_id": "abc", "filename": "a.png", "width": 2, "height": 1,

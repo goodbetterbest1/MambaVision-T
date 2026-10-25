@@ -59,10 +59,9 @@
     <aside class="inspector">
       <div class="inspector-head"><div><span class="eyebrow">结构化记录</span><h2>标注信息</h2></div><span class="version-chip">v2</span></div>
       <div class="inspector-scroll">
-        <section class="form-section"><h3><span class="section-number">01</span>影像与总体判断</h3>
-          <label class="field-label">影像可评估性<select id="imageQuality"><option value="unknown">未评估</option><option value="good">良好</option><option value="limited">有限（注明原因）</option><option value="ungradable">不可评估</option></select></label>
-          <label class="field-label">整体骨吸收严重度<select id="caseGrade"><option value="unreviewed">未判定</option><option value="none">未见明显吸收</option><option value="mild">轻度</option><option value="moderate">中度</option><option value="severe">重度</option><option value="uncertain">不确定</option><option value="ungradable">不可评估</option></select></label>
-          <label class="field-label">病例状态<select id="reviewStatus"><option value="in_progress">标注中</option><option value="complete">已完成</option><option value="needs_review">需要复核</option></select></label>
+        <section class="form-section"><h3><span class="section-number">01</span>自动病例结论</h3>
+          <div class="policy-note">本批影像已筛选为可评估，不需逐例填写影像质量。病例等级取严重度点的最高等级；无严重度点表示未见明显吸收。画线或添加点后自动标记完成。</div>
+          <div class="derived-grid"><div class="derived-item"><span>病例整体等级</span><strong id="caseGradeDisplay">未见明显吸收</strong></div><div class="derived-item"><span>标注状态</span><strong id="reviewStatusDisplay">待开始</strong></div></div>
         </section>
 
         <section class="form-section"><div class="section-title-row"><h3><span class="section-number">02</span>局部严重度位置点</h3><span id="pointCount" class="count-chip">0</span></div>

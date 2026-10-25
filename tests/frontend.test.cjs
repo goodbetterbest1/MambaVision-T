@@ -42,9 +42,8 @@ async function prepare() {
   await new Promise(resolve=>setImmediate(resolve));
   h.hooks.state.current=caseRecord();
   h.hooks.state.images=[{image_id:'demo',filename:'demo.png',width:1000,height:500,saved:false}];
-  h.elements.get('#imageQuality').value='good';
-  h.elements.get('#caseGrade').value='moderate';
-  h.elements.get('#reviewStatus').value='in_progress';
+  h.elements.get('#caseGradeDisplay').textContent='待开始';
+  h.elements.get('#reviewStatusDisplay').textContent='待开始';
   return h;
 }
 function succeed(request) {

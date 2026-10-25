@@ -155,8 +155,47 @@ def validate_case_payload(payload: Any, *, require_identity: bool = False) -> di
     }
 
 
+def derive_case_grade(severity_points: list[dict[str, Any]]) -> str:
+    """Derive a case grade only from explicit severity points.
+
+    Project policy: the highest explicit absorption grade represents the case.
+    No absorption points means screened-normal (``none``); uncertainty-only
+    points remain uncertain/ungradable rather than being converted to normal.
+    """
+    severities = {item.get("severity") for item in severity_points}
+    for grade in ("severe", "moderate", "mild", "none"):
+        if grade in severities:
+            return grade
+    if "uncertain" in severities:
+        return "uncertain"
+    if "ungradable" in severities:
+        return "ungradable"
+    return "none"
+
+
+def has_annotation_geometry(case: dict[str, Any]) -> bool:
+    return bool(
+        case.get("upper_crest_segments")
+        or case.get("lower_crest_segments")
+        or case.get("severity_points")
+    )
+
+
+def apply_annotation_policy(payload: Any, *, require_identity: bool = False) -> dict[str, Any]:
+    """Apply project-wide defaults after validating a case payload."""
+    case = validate_case_payload(payload, require_identity=require_identity)
+    case["image_quality"] = "good"
+    if has_annotation_geometry(case):
+        case["case_grade"] = derive_case_grade(case["severity_points"])
+        case["review_status"] = "complete"
+    else:
+        case["case_grade"] = "unreviewed"
+        case["review_status"] = "in_progress"
+    return case
+
+
 def empty_case(image: dict[str, Any], annotator_id: str = "") -> dict[str, Any]:
-    return validate_case_payload(
+    return apply_annotation_policy(
         {
             **image,
             "annotator_id": annotator_id,

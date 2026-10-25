@@ -3,7 +3,7 @@
   const $ = (selector) => document.querySelector(selector);
   const els = {
     list: $('#imageList'), search: $('#searchInput'), image: $('#panorama'), stage: $('#imageStage'), viewport: $('#canvasViewport'), canvas: $('#overlay'), empty: $('#emptyState'),
-    saveStatus: $('#saveStatus'), saveBtn: $('#saveBtn'), annotator: $('#annotatorId'), quality: $('#imageQuality'), grade: $('#caseGrade'), review: $('#reviewStatus'),
+    saveStatus: $('#saveStatus'), saveBtn: $('#saveBtn'), annotator: $('#annotatorId'), gradeDisplay: $('#caseGradeDisplay'), reviewDisplay: $('#reviewStatusDisplay'),
     pointJaw: $('#pointJaw'), pointSeverity: $('#pointSeverity'), pointConfidence: $('#pointConfidence'), pointList: $('#pointList'), pointCount: $('#pointCount'), notes: $('#notes'),
     explanationEnabled: $('#explanationEnabled'), explanationFields: $('#explanationFields'), finding: $('#finding'), evidence: $('#evidence'), desired: $('#desiredExplanation'), uncertainty: $('#uncertainty'),
     evidencePreview: $('#evidencePreview'), toolHint: $('#toolHint'), zoomLabel: $('#zoomLabel'), toast: $('#toast'),
@@ -18,7 +18,7 @@
   function toast(message, error = false) { els.toast.textContent = message; els.toast.classList.toggle('error', error); els.toast.classList.add('show'); clearTimeout(toastTimeout); toastTimeout = setTimeout(() => els.toast.classList.remove('show'), 2400); }
   function setStatus(kind, text) { els.saveStatus.className = `save-status ${kind || ''}`; els.saveStatus.lastChild.textContent = text; }
   function currentImage() { return state.images[state.index] || null; }
-  function emptyCase(image) { return {schema_version:'dent-alveolar-annotation-v2',image_id:image.image_id,filename:image.filename,width:image.width,height:image.height,modality:'panoramic',image_quality:'unknown',case_grade:'unreviewed',review_status:'in_progress',annotator_id:localStorage.getItem('dental-annotator-id')||'',annotation_version:0,upper_crest_segments:[],lower_crest_segments:[],severity_points:[],notes:'',explanation_sample:{enabled:false,finding:'',evidence:'',desired_explanation:'',uncertainty:'',review_status:'pending'}}; }
+  function emptyCase(image) { return {schema_version:'dent-alveolar-annotation-v2',image_id:image.image_id,filename:image.filename,width:image.width,height:image.height,modality:'panoramic',image_quality:'good',case_grade:'unreviewed',review_status:'in_progress',annotator_id:localStorage.getItem('dental-annotator-id')||'',annotation_version:0,upper_crest_segments:[],lower_crest_segments:[],severity_points:[],notes:'',explanation_sample:{enabled:false,finding:'',evidence:'',desired_explanation:'',uncertainty:'',review_status:'pending'}}; }
 
   async function request(url, options={}) { const response = await fetch(url, options); const data = response.headers.get('content-type')?.includes('application/json') ? await response.json() : null; if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`); return data; }
 
@@ -106,11 +106,27 @@
   function syncForm() {
     const c=state.current; if(!c) return;
     els.annotator.value=c.annotator_id || localStorage.getItem('dental-annotator-id') || '';
-    els.quality.value=c.image_quality || 'unknown'; els.grade.value=c.case_grade || 'unreviewed'; els.review.value=c.review_status || 'in_progress';
     els.notes.value=c.notes || ''; els.explanationEnabled.checked=!!c.explanation_sample?.enabled;
     els.finding.value=c.explanation_sample?.finding||''; els.evidence.value=c.explanation_sample?.evidence||''; els.desired.value=c.explanation_sample?.desired_explanation||''; els.uncertainty.value=c.explanation_sample?.uncertainty||'';
     els.explanationFields.classList.toggle('hidden',!els.explanationEnabled.checked);
-    renderPointList(); updateEvidence();
+    renderPointList(); updateDerivedFields(); updateEvidence();
+  }
+
+  function deriveCaseGradeLocal(caseData) {
+    const points=caseData?.severity_points||[];
+    const severities=new Set(points.map(point=>point.severity));
+    for(const grade of ['severe','moderate','mild','none']) if(severities.has(grade)) return grade;
+    if(severities.has('uncertain')) return 'uncertain';
+    if(severities.has('ungradable')) return 'ungradable';
+    const hasGeometry=Boolean((caseData?.upper_crest_segments||[]).length || (caseData?.lower_crest_segments||[]).length || points.length);
+    return hasGeometry?'none':'unreviewed';
+  }
+
+  function updateDerivedFields() {
+    const grade=deriveCaseGradeLocal(state.current);
+    const labels={unreviewed:'待开始',none:'未见明显吸收',mild:'轻度',moderate:'中度',severe:'重度',uncertain:'不确定',ungradable:'不可评估'};
+    if(els.gradeDisplay) els.gradeDisplay.textContent=labels[grade]||grade;
+    if(els.reviewDisplay) els.reviewDisplay.textContent=grade==='unreviewed'?'待开始':'已完成';
   }
 
   function renderCurrent() {
@@ -203,9 +219,10 @@
     toast('已撤回上一次线段/位置点操作。');
   }
 
-  function markDirty() { if(!state.current || state.loading)return;state.editRevision+=1;state.dirty=true;setStatus('saving','有未保存修改');updateEvidence();clearTimeout(state.saveTimer);state.saveTimer=setTimeout(saveCurrent,state.autosaveDelayMs); }
+  function markDirty() { if(!state.current || state.loading)return;state.current.image_quality='good';state.current.case_grade=deriveCaseGradeLocal(state.current);state.current.review_status=state.current.case_grade==='unreviewed'?'in_progress':'complete';state.editRevision+=1;state.dirty=true;setStatus('saving','有未保存修改');updateDerivedFields();updateEvidence();clearTimeout(state.saveTimer);state.saveTimer=setTimeout(saveCurrent,state.autosaveDelayMs); }
   function collectForm() {
-    return {...state.current,annotator_id:els.annotator.value.trim(),image_quality:els.quality.value,case_grade:els.grade.value,review_status:els.review.value,notes:els.notes.value,explanation_sample:{enabled:els.explanationEnabled.checked,finding:els.finding.value,evidence:els.evidence.value,desired_explanation:els.desired.value,uncertainty:els.uncertainty.value,review_status:'pending'}};
+    const caseGrade=deriveCaseGradeLocal(state.current);
+    return {...state.current,annotator_id:els.annotator.value.trim(),image_quality:'good',case_grade:caseGrade,review_status:caseGrade==='unreviewed'?'in_progress':'complete',notes:els.notes.value,explanation_sample:{enabled:els.explanationEnabled.checked,finding:els.finding.value,evidence:els.evidence.value,desired_explanation:els.desired.value,uncertainty:els.uncertainty.value,review_status:'pending'}};
   }
   async function saveCurrent() {
     if(state.savePromise) return state.savePromise;
@@ -226,7 +243,7 @@
           state.current=changed?{...state.current,annotation_version:response.case.annotation_version,created_at:response.case.created_at,updated_at:response.case.updated_at}:response.case;
           state.dirty=changed;
           state.images=state.images.map(item=>item.image_id===imageId?{...item,saved:true,review_status:response.case.review_status,case_grade:response.case.case_grade}:item);
-          setStatus(changed?'saving':'saved',changed?'有新修改待保存':'已保存');updateEvidence();renderList();
+          updateDerivedFields();setStatus(changed?'saving':'saved',changed?'有新修改待保存':'已保存');updateEvidence();renderList();
         }
         showStorage(response.storage,response.annotation_config);
         success=true;
@@ -268,7 +285,7 @@
   els.canvas.addEventListener('pointerup',finishLine);els.canvas.addEventListener('pointercancel',finishLine);
 
   function bindField(element, event='change') { element.addEventListener(event,()=>{if(element===els.annotator){localStorage.setItem('dental-annotator-id',element.value.trim());}if(element===els.explanationEnabled)els.explanationFields.classList.toggle('hidden',!element.checked);markDirty();}); }
-  [els.annotator,els.quality,els.grade,els.review,els.notes,els.explanationEnabled,els.finding,els.evidence,els.desired,els.uncertainty].forEach((element)=>bindField(element,element.tagName==='TEXTAREA'||element===els.annotator?'input':'change'));
+  [els.annotator,els.notes,els.explanationEnabled,els.finding,els.evidence,els.desired,els.uncertainty].forEach((element)=>bindField(element,element.tagName==='TEXTAREA'||element===els.annotator?'input':'change'));
   document.querySelectorAll('.tool').forEach((button)=>button.addEventListener('click',()=>{state.tool=button.dataset.tool;updateTool();}));
   document.querySelectorAll('.filter').forEach((button)=>button.addEventListener('click',()=>{state.filter=button.dataset.filter;document.querySelectorAll('.filter').forEach((b)=>b.classList.toggle('active',b===button));renderList();}));
   els.search.addEventListener('input',renderList);$('#showPublic').addEventListener('change',drawOverlay);$('#refreshBtn').addEventListener('click',async()=>{try{if(!(await flushChanges()))return;await request('/api/refresh',{method:'POST'});await loadImages();}catch(error){toast(`刷新失败：${error.message}`,true);}});

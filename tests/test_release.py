@@ -29,7 +29,7 @@ class ReleaseTests(unittest.TestCase):
     def test_keep_local_and_prevalidate_import(self):
         with tempfile.TemporaryDirectory() as directory:
             db=AnnotationDB(Path(directory)/'test.sqlite3')
-            case={'image_id':'same','filename':'same.png','case_grade':'mild'}
+            case={'image_id':'same','filename':'same.png','severity_points':[{'x':.2,'y':.3,'jaw':'upper','severity':'mild'}]}
             db.save(case)
             self.assertEqual(db.import_cases([{**case,'case_grade':'severe'}],'keep_local')['skipped'],1)
             self.assertEqual(db.get('same')['case_grade'],'mild')
